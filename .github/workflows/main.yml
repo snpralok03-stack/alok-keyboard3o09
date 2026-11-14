@@ -25,32 +25,52 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
         with:
-          packages: 'platform-tools'
           accept-android-sdk-licenses: 'true'
 
-      - name: Install SDK Packages
+      - name: Install Android SDK
         run: |
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
           yes | sdkmanager --licenses
 
-      - name: Check Project Files
+      - name: Extract Project ZIP
         run: |
-          ls -la
-          test -f settings.gradle.kts
-          test -f app/build.gradle.kts
-          test -f gradlew
+          unzip -q AlokCompanion-Project-Root.zip -d extracted
+          echo "ZIP extracted successfully"
+          find extracted -maxdepth 4 -type f | head -80
 
-      - name: Build Debug APK
+      - name: Locate Gradle Project
+        id: locate
         run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon :app:assembleDebug
+          FILE=$(find extracted -type f \( \
+            -name settings.gradle.kts -o \
+            -name settings.gradle \
+            \) -print -quit)
+
+          if [ -z "$FILE" ]; then
+            echo "ERROR: No Gradle settings file found in ZIP"
+            exit 1
+          fi
+
+          DIR=$(dirname "$FILE")
+          echo "project_dir=$DIR" >> "$GITHUB_OUTPUT"
+          echo "Project found: $DIR"
+
+      - name: Build APK
+        run: |
+          gradle -p "${{ steps.locate.outputs.project_dir }}" \
+            --no-daemon :app:assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Alok-Keyboard-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: extracted/**/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
